@@ -1,3 +1,4 @@
+import logging
 import sys
 import uuid
 import os
@@ -21,9 +22,12 @@ event_flags_end = 0xD87E  # expand for SS Anne # old - 0xD7F6
 museum_ticket = (0xD754, 0)
 
 class RedGymEnv(Env):
-    def __init__(self, config=None):
+
+    def __init__(
+        self, config=None):
+
         self.debug = config['debug']
-        self.s_path = config['session_path']
+        self.s_path = Path(config['session_path'])  # Convert to Path object
         self.save_final_state = config['save_final_state']
         self.print_rewards = config['print_rewards']
         self.vec_dim = 4320

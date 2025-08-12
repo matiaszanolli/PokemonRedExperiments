@@ -1,69 +1,40 @@
-from os.path import exists
-from pathlib import Path
-import uuid
+import os
+import json
+import gymnasium as gym
+import numpy as np
 from red_gym_env import RedGymEnv
-from stable_baselines3 import A2C, PPO
-from stable_baselines3.common import env_checker
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
-from stable_baselines3.common.utils import set_random_seed
+from stable_baselines3 import PPO
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecTransposeImage
 from stable_baselines3.common.callbacks import CheckpointCallback
+import logging
+import sys
 
-def make_env(rank, env_conf, seed=0):
-    """
-    Utility function for multiprocessed env.
-    :param env_id: (str) the environment ID
-    :param num_env: (int) the number of environments you wish to have in subprocesses
-    :param seed: (int) the initial seed for RNG
-    :param rank: (int) index of the subprocess
-    """
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', handlers=[logging.StreamHandler(sys.stdout)])
+logger = logging.getLogger(__name__)
+
+def make_env(rank, env_config):
     def _init():
-        env = RedGymEnv(env_conf)
-        env.reset(seed=(seed + rank))
+        env = RedGymEnv(env_config)
         return env
-    set_random_seed(seed)
     return _init
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    num_cpu = 8  # Number of processes to use
+    ep_length = 128
 
+    config_path = os.path.join(os.path.dirname(__file__), '..', 'config.json')
+    with open(config_path) as f:
+        env_config = json.load(f)
 
-    ep_length = 2048 * 8
-    sess_path = Path(f'session_{str(uuid.uuid4())[:8]}')
+    try:
+        env = SubprocVecEnv([make_env(i, env_config) for i in range(num_cpu)])
+        env = VecTransposeImage(env)
 
-    # Determine paths relative to the project root
-    script_dir = Path(__file__).parent
-    project_root = script_dir.parent
-    gb_rom_path = project_root / "PokemonRed.gb"
-    init_state_path = project_root / "has_pokedex_nballs.state"
+        model = PPO("CnnPolicy", env, verbose=1, tensorboard_log="./ppo_tensorboard/")
 
-    env_config = {
-                'headless': False, 'save_final_state': True, 'early_stop': False,
-                'action_freq': 24, 'init_state': str(init_state_path), 'max_steps': ep_length, 
-                'print_rewards': True, 'save_video': True, 'fast_video': True, 'session_path': sess_path,
-                'gb_path': str(gb_rom_path), 'debug': False, 'sim_frame_dist': 2_000_000.0, 
-                'use_screen_explore': True, 'extra_buttons': False
-            }
-    
-    
-    num_cpu = 8 #64 #46  # Also sets the number of episodes per training iteration
-    env = SubprocVecEnv([make_env(i, env_config) for i in range(num_cpu)])
-    
-    checkpoint_callback = CheckpointCallback(save_freq=ep_length, save_path=sess_path,
-                                     name_prefix='poke')
-    #env_checker.check_env(env)
-    learn_steps = 40
-    file_name = 'session_e41c9eff/poke_38207488_steps' #'session_e41c9eff/poke_250871808_steps'
-    
-    #'session_bfdca25a/poke_42532864_steps' #'session_d3033abb/poke_47579136_steps' #'session_a17cc1f5/poke_33546240_steps' #'session_e4bdca71/poke_8945664_steps' #'session_eb21989e/poke_40255488_steps' #'session_80f70ab4/poke_58982400_steps'
-    if exists(file_name + '.zip'):
-        print('\nloading checkpoint')
-        model = PPO.load(file_name, env=env)
-        model.n_steps = ep_length
-        model.n_envs = num_cpu
-        model.rollout_buffer.buffer_size = ep_length
-        model.rollout_buffer.n_envs = num_cpu
-        model.rollout_buffer.reset()
-    else:
-        model = PPO('CnnPolicy', env, verbose=1, n_steps=ep_length, batch_size=512, n_epochs=1, gamma=0.999)
-    
-    for i in range(learn_steps):
+        checkpoint_callback = CheckpointCallback(save_freq=1000, save_path="./checkpoints/", name_prefix="ppo_model")
+
         model.learn(total_timesteps=(ep_length)*num_cpu*1000, callback=checkpoint_callback)
+    except Exception as e:
+        logger.error(f"Error during training: {e}")
+        raise
