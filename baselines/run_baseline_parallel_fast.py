@@ -42,13 +42,13 @@ if __name__ == '__main__':
     
     print(env_config)
     
-    num_cpu = 16  # Also sets the number of episodes per training iteration
+    num_cpu = 30  # Also sets the number of episodes per training iteration
     env = SubprocVecEnv([make_env(i, env_config) for i in range(num_cpu)])
     
     checkpoint_callback = CheckpointCallback(save_freq=ep_length, save_path=sess_path,
                                      name_prefix='poke')
     
-    callbacks = [checkpoint_callback, TensorboardCallback()]
+    callbacks = [checkpoint_callback, TensorboardCallback(sess_path)]
 
     if use_wandb_logging:
         import wandb
@@ -65,7 +65,7 @@ if __name__ == '__main__':
 
     #env_checker.check_env(env)
     # put a checkpoint here you want to start from
-    file_name = 'session_e41c9eff/poke_38207488_steps' 
+    file_name = 'session_4da05e87_main_good/poke_439746560_steps' 
     
     if exists(file_name + '.zip'):
         print('\nloading checkpoint')

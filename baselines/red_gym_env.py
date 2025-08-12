@@ -32,7 +32,7 @@ class RedGymEnv(Env):
         self.print_rewards = config['print_rewards']
         self.vec_dim = 4320 #1000
         self.headless = config['headless']
-        self.num_elements = 20000 # max
+        self.num_elements = 5000 # max
         self.init_state = config['init_state']
         self.act_freq = config['action_freq']
         self.max_steps = config['max_steps']

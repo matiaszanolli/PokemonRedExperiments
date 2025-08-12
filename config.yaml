@@ -1,0 +1,13 @@
+# config.yaml
+env:
+  session_path: "session/"
+  save_final_state: True
+  print_rewards: True
+  headless: False
+  init_state: "has_pokedex_nballs.state"
+  action_freq: 24
+  max_steps: 2048
+  save_video: False
+  fast_video: True
+  explore_weight: 1
+  reward_scale: 1

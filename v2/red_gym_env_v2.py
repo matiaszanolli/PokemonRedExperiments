@@ -13,6 +13,7 @@ from einops import repeat
 from gymnasium import Env, spaces
 from pyboy.utils import WindowEvent
 
+from reward_calculator import RewardCalculator
 from global_map import local_to_global, GLOBAL_MAP_SHAPE
 
 event_flags_start = 0xD747
@@ -80,9 +81,13 @@ class RedGymEnv(Env):
         ]
 
         # load event names (parsed from https://github.com/pret/pokered/blob/91dc3c9f9c8fd529bb6e8307b58b96efa0bec67e/constants/event_constants.asm)
-        with open("events.json") as f:
-            event_names = json.load(f)
-        self.event_names = event_names
+        try:
+            with open("events.json") as f:
+                event_names = json.load(f)
+            self.event_names = event_names
+        except FileNotFoundError:
+            print("Error: events.json not found. Event names will not be loaded.")
+            self.event_names = {}
 
         self.output_shape = (72, 80, self.frame_stacks)
         self.coords_pad = 12
@@ -108,12 +113,18 @@ class RedGymEnv(Env):
         head = "null" if config["headless"] else "SDL2"
 
         #log_level("ERROR")
-        self.pyboy = PyBoy(
-            config["gb_path"],
-            #debugging=False,
-            #disable_input=False,
-            window=head,
-        )
+        try:
+            self.pyboy = PyBoy(
+                config["gb_path"],
+                window=head,
+            )
+        except Exception as e:
+            print(f"Error initializing PyBoy: {e}")
+            # Depending on the severity, you might want to re-raise, exit, or set a flag
+            # For now, we'll just set pyboy to None and let subsequent calls fail gracefully
+            self.pyboy = None
+
+        self.reward_calculator = RewardCalculator(self)
 
         #self.screen = self.pyboy.botsupport_manager().screen()
 
@@ -123,8 +134,12 @@ class RedGymEnv(Env):
     def reset(self, seed=None, options={}):
         self.seed = seed
         # restart game, skipping credits
-        with open(self.init_state, "rb") as f:
-            self.pyboy.load_state(f)
+        try:
+            with open(self.init_state, "rb") as f:
+                self.pyboy.load_state(f)
+        except FileNotFoundError:
+            print(f"Error: Initial state file not found at {self.init_state}. Please ensure the path is correct.")
+            # Depending on desired behavior, you might want to exit or load a default state
 
         self.init_map_mem()
 
@@ -159,7 +174,7 @@ class RedGymEnv(Env):
         # self.max_steps += 128
 
         self.max_map_progress = 0
-        self.progress_reward = self.get_game_state_reward()
+        self.progress_reward = self.reward_calculator.get_game_state_reward()
         self.total_reward = sum([val for _, val in self.progress_reward.items()])
         self.reset_count += 1
         return self._get_obs(), {}
@@ -212,7 +227,7 @@ class RedGymEnv(Env):
 
         self.update_explore_map()
 
-        self.update_heal_reward()
+        self.reward_calculator.update_heal_reward()
 
         self.party_size = self.read_m(0xD163)
 
@@ -387,7 +402,7 @@ class RedGymEnv(Env):
 
     def update_reward(self):
         # compute reward
-        self.progress_reward = self.get_game_state_reward()
+        self.progress_reward = self.reward_calculator.get_game_state_reward()
         new_total = sum(
             [val for _, val in self.progress_reward.items()]
         )
@@ -556,18 +571,15 @@ class RedGymEnv(Env):
 
     def read_hp_fraction(self):
         hp_sum = sum([
-            self.read_hp(add)
+            self.reward_calculator.read_hp(add)
             for add in [0xD16C, 0xD198, 0xD1C4, 0xD1F0, 0xD21C, 0xD248]
         ])
         max_hp_sum = sum([
-            self.read_hp(add)
+            self.reward_calculator.read_hp(add)
             for add in [0xD18D, 0xD1B9, 0xD1E5, 0xD211, 0xD23D, 0xD269]
         ])
         max_hp_sum = max(max_hp_sum, 1)
         return hp_sum / max_hp_sum
-
-    def read_hp(self, start):
-        return 256 * self.read_m(start) + self.read_m(start + 1)
 
     # built-in since python 3.10
     def bit_count(self, bits):
@@ -575,13 +587,3 @@ class RedGymEnv(Env):
     
     def fourier_encode(self, val):
         return np.sin(val * 2 ** np.arange(self.enc_freqs))
-    
-    def update_map_progress(self):
-        map_idx = self.read_m(0xD35E)
-        self.max_map_progress = max(self.max_map_progress, self.get_map_progress(map_idx))
-    
-    def get_map_progress(self, map_idx):
-        if map_idx in self.essential_map_locations.keys():
-            return self.essential_map_locations[map_idx]
-        else:
-            return -1
