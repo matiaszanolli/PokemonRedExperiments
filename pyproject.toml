@@ -21,8 +21,6 @@ dependencies = [
     "fastjsonschema==2.18.0",
     "filelock==3.12.2",
     "fonttools==4.40.0",
-    "gym==0.26.2",
-    "gym-notices==0.0.8",
     "gymnasium==0.28.1",
     "hnswlib==0.7.0",
     "imageio==2.31.1",

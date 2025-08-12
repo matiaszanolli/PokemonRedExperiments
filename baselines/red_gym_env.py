@@ -1,38 +1,34 @@
-
 import sys
-import uuid 
+import uuid
 import os
 from math import floor, sqrt
 import json
 from pathlib import Path
-
 import numpy as np
 from einops import rearrange
 import matplotlib.pyplot as plt
 from skimage.transform import resize
 from pyboy import PyBoy
-#from pyboy.logger import log_level
 import hnswlib
 import mediapy as media
 import pandas as pd
-
 from gymnasium import Env, spaces
 from pyboy.utils import WindowEvent
 from memory_addresses import *
 
+event_flags_start = 0xD747
+event_flags_end = 0xD87E  # expand for SS Anne # old - 0xD7F6
+museum_ticket = (0xD754, 0)
+
 class RedGymEnv(Env):
-
-
-    def __init__(
-        self, config=None):
-
+    def __init__(self, config=None):
         self.debug = config['debug']
         self.s_path = config['session_path']
         self.save_final_state = config['save_final_state']
         self.print_rewards = config['print_rewards']
-        self.vec_dim = 4320 #1000
+        self.vec_dim = 4320
         self.headless = config['headless']
-        self.num_elements = 5000 # max
+        self.num_elements = 5000
         self.init_state = config['init_state']
         self.act_freq = config['action_freq']
         self.max_steps = config['max_steps']
@@ -51,8 +47,6 @@ class RedGymEnv(Env):
         self.s_path.mkdir(exist_ok=True)
         self.reset_count = 0
         self.all_runs = []
-
-        # Set this in SOME subclasses
         self.metadata = {"render.modes": []}
         self.reward_range = (0, 15000)
 
@@ -64,7 +58,6 @@ class RedGymEnv(Env):
             WindowEvent.PRESS_BUTTON_A,
             WindowEvent.PRESS_BUTTON_B,
         ]
-        
         if self.extra_buttons:
             self.valid_actions.extend([
                 WindowEvent.PRESS_BUTTON_START,
@@ -92,14 +85,11 @@ class RedGymEnv(Env):
                             self.output_shape[1],
                             self.output_shape[2]
         )
-
-        # Set these in ALL subclasses
         self.action_space = spaces.Discrete(len(self.valid_actions))
         self.observation_space = spaces.Box(low=0, high=255, shape=self.output_full, dtype=np.uint8)
 
         head = 'headless' if config['headless'] else 'SDL2'
 
-        #log_level("ERROR")
         self.pyboy = PyBoy(
                 config['gb_path'],
                 debugging=False,
@@ -112,7 +102,6 @@ class RedGymEnv(Env):
 
         if not config['headless']:
             self.pyboy.set_emulation_speed(6)
-            
         self.reset()
 
     def reset(self, seed=None, options=None):
@@ -391,6 +380,16 @@ class RedGymEnv(Env):
             done = self.step_count >= self.max_steps
         #done = self.read_hp_fraction() == 0
         return done
+
+    def _print_reward_info(self, done):
+        if self.print_rewards:
+            prog_string = f'step: {self.step_count:6d}'
+            for key, val in self.progress_reward.items():
+                prog_string += f' {key}: {val:5.2f}'
+            prog_string += f' sum: {self.total_reward:5.2f}'
+            print(f'\r{prog_string}', end='', flush=True)
+            if done:
+                print('', flush=True)
 
     def save_and_print_info(self, done, obs_memory):
         if self.print_rewards:

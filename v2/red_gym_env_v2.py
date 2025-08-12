@@ -301,39 +301,42 @@ class RedGymEnv(Env):
         )
 
     def start_video(self):
+        try:
+            if self.full_frame_writer is not None:
+                self.full_frame_writer.close()
+            if self.model_frame_writer is not None:
+                self.model_frame_writer.close()
+            if self.map_frame_writer is not None:
+                self.map_frame_writer.close()
 
-        if self.full_frame_writer is not None:
-            self.full_frame_writer.close()
-        if self.model_frame_writer is not None:
-            self.model_frame_writer.close()
-        if self.map_frame_writer is not None:
-            self.map_frame_writer.close()
-
-        base_dir = self.s_path / Path("rollouts")
-        base_dir.mkdir(exist_ok=True)
-        full_name = Path(
-            f"full_reset_{self.reset_count}_id{self.instance_id}"
-        ).with_suffix(".mp4")
-        model_name = Path(
-            f"model_reset_{self.reset_count}_id{self.instance_id}"
-        ).with_suffix(".mp4")
-        self.full_frame_writer = media.VideoWriter(
-            base_dir / full_name, (144, 160), fps=60, input_format="gray"
-        )
-        self.full_frame_writer.__enter__()
-        self.model_frame_writer = media.VideoWriter(
-            base_dir / model_name, self.output_shape[:2], fps=60, input_format="gray"
-        )
-        self.model_frame_writer.__enter__()
-        map_name = Path(
-            f"map_reset_{self.reset_count}_id{self.instance_id}"
-        ).with_suffix(".mp4")
-        self.map_frame_writer = media.VideoWriter(
-            base_dir / map_name,
-            (self.coords_pad*4, self.coords_pad*4), 
-            fps=60, input_format="gray"
-        )
-        self.map_frame_writer.__enter__()
+            base_dir = self.s_path / Path("rollouts")
+            base_dir.mkdir(exist_ok=True)
+            full_name = Path(
+                f"full_reset_{self.reset_count}_id{self.instance_id}"
+            ).with_suffix(".mp4")
+            model_name = Path(
+                f"model_reset_{self.reset_count}_id{self.instance_id}"
+            ).with_suffix(".mp4")
+            self.full_frame_writer = media.VideoWriter(
+                base_dir / full_name, (144, 160), fps=60, input_format="gray"
+            )
+            self.full_frame_writer.__enter__()
+            self.model_frame_writer = media.VideoWriter(
+                base_dir / model_name, self.output_shape[:2], fps=60, input_format="gray"
+            )
+            self.model_frame_writer.__enter__()
+            map_name = Path(
+                f"map_reset_{self.reset_count}_id{self.instance_id}"
+            ).with_suffix(".mp4")
+            self.map_frame_writer = media.VideoWriter(
+                base_dir / map_name,
+                (self.coords_pad*4, self.coords_pad*4), 
+                fps=60, input_format="gray"
+            )
+            self.map_frame_writer.__enter__()
+        except Exception as e:
+            print(f"Error initializing video writers: {e}")
+            self.save_video = False  # Disable video saving on error
 
     def add_video_frame(self):
         self.full_frame_writer.add_image(
@@ -480,10 +483,16 @@ class RedGymEnv(Env):
         return bin(256 + self.read_m(addr))[-bit - 1] == "1"
 
     def read_event_bits(self):
-        return [
-            int(bit) for i in range(event_flags_start, event_flags_end) 
-            for bit in f"{self.read_m(i):08b}"
-        ]
+        try:
+            event_bits = []
+            for i in range(event_flags_start, event_flags_end):
+                val = self.read_m(i)
+                bits = [int(bit) for bit in f"{val:08b}"]
+                event_bits.extend(bits)
+            return event_bits
+        except Exception as e:
+            print(f"Error reading event bits: {e}")
+            return [0] * ((event_flags_end - event_flags_start) * 8)
 
     def get_levels_sum(self):
         min_poke_level = 2
